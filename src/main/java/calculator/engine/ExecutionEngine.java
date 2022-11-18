@@ -67,6 +67,7 @@ import graphql.schema.DataFetchingEnvironment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.ref.SoftReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -93,8 +94,8 @@ public class ExecutionEngine extends SimpleInstrumentation {
 
     private final ScriptEvaluator scriptEvaluator;
 
-    // FIXME
-    private final ConcurrentHashMap<String, PreparsedDocumentEntry> documentCache = new ConcurrentHashMap<>();
+    // SoftReference avoid memory leak
+    private final List<SoftReference<ConcurrentHashMap<String, PreparsedDocumentEntry>>> documentCache = new ArrayList<>(1);
 
 
     private ExecutionEngine(Executor executor, ObjectMapper objectMapper, ScriptEvaluator scriptEvaluator) {
@@ -110,7 +111,11 @@ public class ExecutionEngine extends SimpleInstrumentation {
     // ============================================== create InstrumentationState for engine  ==============================================
     @Override
     public InstrumentationState createState(InstrumentationCreateStateParameters parameters) {
-        PreparsedDocumentEntry documentEntry = documentCache.compute(parameters.getExecutionInput().getQuery(), (key, oldValue) -> {
+        if (documentCache.isEmpty() || documentCache.get(0) == null || documentCache.get(0).get() == null) {
+            documentCache.clear();
+            documentCache.add(new SoftReference<>(new ConcurrentHashMap<>()));
+        }
+        PreparsedDocumentEntry documentEntry = documentCache.get(0).get().compute(parameters.getExecutionInput().getQuery(), (key, oldValue) -> {
             if (oldValue != null) {
                 return oldValue;
             }
